@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import os  # Added for path handling
 from utils.blending import pyramid_blending
 from utils.color_adjustment import match_colors
 from utils.helpers import load_images, show_image
@@ -15,8 +16,15 @@ def create_blend_mask(img_shape, blend_width=100):
             mask[:, x] = 1 - (x - center) / blend_width
     return mask
 
+def ensure_output_folder_exists():
+    """Creates output folder if it doesn't exist"""
+    os.makedirs('images/output', exist_ok=True)
+
 def main():
-    # Load satellite images (replace with your image paths)
+    # 1. Ensure output folder exists
+    ensure_output_folder_exists()
+
+    # 2. Load satellite images
     try:
         img1, img2 = load_images('images/input/sat1.jpg', 'images/input/sat2.jpg')
     except Exception as e:
@@ -30,18 +38,18 @@ def main():
 
     print(f"Loaded images with shapes: {img1.shape} and {img2.shape}")
 
-    # Create blend mask (gradual transition at center)
+    # 3. Create blend mask
     mask = create_blend_mask(img1)
 
-    # Color correction (match img2 colors to img1 in overlap region)
+    # 4. Color correction
     print("Applying color correction...")
     img2_corrected = match_colors(img2, img1, mask)
 
-    # Pyramid blending
+    # 5. Pyramid blending
     print("Performing pyramid blending...")
     result = pyramid_blending(img1, img2_corrected, mask, levels=5)
 
-    # Save and show results
+    # 6. Save and show results
     output_path = 'images/output/composite.jpg'
     cv2.imwrite(output_path, result)
     print(f"Composite image saved to: {output_path}")
@@ -49,7 +57,7 @@ def main():
     # Display results
     show_image(result, "Final Composition")
 
-    # Optional: Show intermediate steps
+    # Show intermediate steps
     if input("Show intermediate steps? (y/n): ").lower() == 'y':
         show_image(img1, "Original Image 1")
         show_image(img2, "Original Image 2")
