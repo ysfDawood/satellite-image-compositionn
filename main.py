@@ -6,14 +6,22 @@ from utils.color_adjustment import match_colors
 from utils.helpers import load_images, show_image
 
 def create_blend_mask(img_shape, blend_width=100):
-    """Create a gradual blend mask for smooth transitions"""
-    mask = np.zeros(img_shape[:2], dtype=np.float32)
-    center = img_shape[1] // 2
+    """Create a gradual blend mask with proper shape handling"""
+    if isinstance(img_shape, tuple):  # If passed full shape (height, width, channels)
+        height, width = img_shape[:2]
+    else:  # If passed an image array
+        height, width = img_shape.shape[:2]
+    
+    mask = np.zeros((height, width), dtype=np.float32)
+    center = width // 2
+    
+    # Create smooth transition
     for x in range(center - blend_width, center + blend_width):
         if x < center:
             mask[:, x] = (x - (center - blend_width)) / blend_width
         else:
             mask[:, x] = 1 - (x - center) / blend_width
+            
     return mask
 
 def ensure_output_folder_exists():
@@ -39,7 +47,7 @@ def main():
     print(f"Loaded images with shapes: {img1.shape} and {img2.shape}")
 
     # 3. Create blend mask
-    mask = create_blend_mask(img1)
+   mask = create_blend_mask(img1.shape)  # Pass just the shape tuple
 
     # 4. Color correction
     print("Applying color correction...")
