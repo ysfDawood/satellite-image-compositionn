@@ -98,7 +98,7 @@ def main():
         # 7. Display results
         show_image(result, "Final Composition")
 
-        # Optional debug views
+        # debug views
         if input("Show intermediate steps? (y/n): ").lower() == 'y':
             show_image(img1, "Original Image 1")
             show_image(img2, "Original Image 2")
