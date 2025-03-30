@@ -2,11 +2,10 @@ import cv2
 import numpy as np
 import os
 from pathlib import Path
-from utils.blending import pyramid_blending
 from utils.helpers import show_image
 
 def create_blend_mask(img_shape, blend_width=100):
-    """Create a single-channel uint8 mask (CV_8UC1)"""
+    """Create a single-channel uint8 mask with smooth transition"""
     if isinstance(img_shape, tuple):
         height, width = img_shape[:2]
     else:
@@ -21,32 +20,67 @@ def create_blend_mask(img_shape, blend_width=100):
         else:
             val = int(255 * (1 - (x - center) / blend_width))
         mask[:, x] = np.clip(val, 0, 255)
-            
     return mask
 
 def match_colors(source, target, mask, threshold=0.1):
-    """Color matching with proper mask handling"""
-    # Convert mask to float32 and threshold
-    mask_float = (mask.astype(np.float32) / 255.0 > threshold).astype(np.float32)
+    """Color correction with proper mask handling"""
+    _, binary_mask = cv2.threshold(mask, int(255*threshold), 255, cv2.THRESH_BINARY)
     
-    # Convert to 3-channel by broadcasting
-    if len(mask_float.shape) == 2:
-        mask_float = np.stack([mask_float]*3, axis=-1)
-    
-    # Color space conversion
     source_lab = cv2.cvtColor(source, cv2.COLOR_BGR2LAB)
     target_lab = cv2.cvtColor(target, cv2.COLOR_BGR2LAB)
     
-    # Calculate statistics (using first channel only)
-    s_mean, s_std = cv2.meanStdDev(source_lab, mask=mask_float[:,:,0])
-    t_mean, t_std = cv2.meanStdDev(target_lab, mask=mask_float[:,:,0])
+    s_mean, s_std = cv2.meanStdDev(source_lab, mask=binary_mask)
+    t_mean, t_std = cv2.meanStdDev(target_lab, mask=binary_mask)
     
-    # Color transfer
     result_lab = source_lab.copy()
     for c in range(3):
         result_lab[:,:,c] = ((source_lab[:,:,c] - s_mean[c]) * (t_std[c] / (s_std[c] + 1e-6))) + t_mean[c]
     
     return cv2.cvtColor(result_lab, cv2.COLOR_LAB2BGR)
+
+def pyramid_blending(img1, img2, mask, levels=5):
+    """Fixed pyramid blending with size alignment"""
+    # Generate Gaussian pyramids
+    G1 = img1.copy().astype(np.float32)
+    G2 = img2.copy().astype(np.float32)
+    GM = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR).astype(np.float32) / 255.0
+    
+    gp1 = [G1]
+    gp2 = [G2]
+    gpM = [GM]
+    
+    for _ in range(levels):
+        G1 = cv2.pyrDown(G1)
+        G2 = cv2.pyrDown(G2)
+        GM = cv2.pyrDown(GM)
+        gp1.append(G1)
+        gp2.append(G2)
+        gpM.append(GM)
+    
+    # Generate Laplacian pyramids
+    lp1 = [gp1[levels-1]]
+    lp2 = [gp2[levels-1]]
+    for i in range(levels-1, 0, -1):
+        size = (gp1[i-1].shape[1], gp1[i-1].shape[0])
+        L1 = gp1[i-1] - cv2.resize(cv2.pyrUp(gp1[i]), size)
+        L2 = gp2[i-1] - cv2.resize(cv2.pyrUp(gp2[i]), size)
+        lp1.append(L1)
+        lp2.append(L2)
+    
+    # Blend pyramids
+    LS = []
+    for l1, l2, gm in zip(lp1, lp2, reversed(gpM)):
+        ls = l1 * (1 - gm) + l2 * gm
+        LS.append(ls)
+    
+    # Reconstruct
+    ls_ = LS[0]
+    for i in range(1, levels+1):
+        size = (LS[i].shape[1], LS[i].shape[0])
+        ls_ = cv2.resize(cv2.pyrUp(ls_), size)
+        ls_ = cv2.add(ls_, LS[i])
+    
+    return np.clip(ls_, 0, 255).astype(np.uint8)
 
 def ensure_folders_exist():
     os.makedirs('images/input', exist_ok=True)
@@ -66,7 +100,7 @@ def load_images(path1, path2):
     img2 = cv2.imread(str(img2_path))
     
     if img1 is None or img2 is None:
-        raise ValueError("Failed to load images - may be corrupt")
+        raise ValueError("Failed to load images - check if they're valid JPEG files")
     
     if img1.shape != img2.shape:
         raise ValueError(f"Size mismatch: {img1.shape} vs {img2.shape}")
@@ -80,18 +114,17 @@ def main():
         print(f"Loaded images: {img1.shape}, {img2.shape}")
 
         mask = create_blend_mask(img1.shape)
-        print(f"Mask created: {mask.dtype}, {mask.shape}")
+        print(f"Mask properties - Type: {mask.dtype}, Shape: {mask.shape}")
 
         print("Applying color correction...")
         img2_corrected = match_colors(img2, img1, mask)
 
-        print("Blending images...")
-        mask_float = mask.astype(np.float32) / 255.0
-        result = pyramid_blending(img1, img2_corrected, mask_float, levels=5)
+        print("Performing pyramid blending...")
+        result = pyramid_blending(img1, img2_corrected, mask, levels=5)
 
         output_path = 'images/output/composite.jpg'
         cv2.imwrite(output_path, result)
-        print(f"Saved result to: {Path(output_path).absolute()}")
+        print(f"Successfully saved to: {Path(output_path).absolute()}")
 
         show_image(result, "Final Result")
         
@@ -107,6 +140,8 @@ def main():
         print("1. Verify both sat1.jpg and sat2.jpg exist")
         print("2. Check images open in other software")
         print(f"3. Input contents: {os.listdir('images/input') if os.path.exists('images/input') else 'Missing input folder'}")
+        print("4. Run verification:")
+        print(f"   python -c \"import cv2; print('sat1 readable:', cv2.imread('images/input/sat1.jpg') is not None)\"")
 
 if __name__ == "__main__":
     main()
