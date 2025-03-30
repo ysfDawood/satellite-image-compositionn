@@ -16,7 +16,7 @@ def create_blend_mask(img_shape, blend_width=100):
     
     for x in range(center - blend_width, center + blend_width):
         if x < center:
-            val = int(255 * (x - (center - blend_width)) / blend_width
+            val = int(255 * (x - (center - blend_width)) / blend_width)
         else:
             val = int(255 * (1 - (x - center) / blend_width))
         mask[:, x] = np.clip(val, 0, 255)
