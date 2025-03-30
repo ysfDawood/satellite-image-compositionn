@@ -16,7 +16,7 @@ def create_blend_mask(img_shape, blend_width=100):
     
     for x in range(center - blend_width, center + blend_width):
         if x < center:
-            val = int(255 * (x - (center - blend_width)) / blend_width)
+            val = int(255 * (x - (center - blend_width)) / blend_width
         else:
             val = int(255 * (1 - (x - center) / blend_width))
         mask[:, x] = np.clip(val, 0, 255)
@@ -39,11 +39,14 @@ def match_colors(source, target, mask, threshold=0.1):
     return cv2.cvtColor(result_lab, cv2.COLOR_LAB2BGR)
 
 def pyramid_blending(img1, img2, mask, levels=5):
-    """Fixed pyramid blending with size alignment"""
+    """Fixed pyramid blending with precise size alignment"""
+    # Ensure mask is 3-channel for multiplication
+    mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR).astype(np.float32) / 255.0
+    
     # Generate Gaussian pyramids
     G1 = img1.copy().astype(np.float32)
     G2 = img2.copy().astype(np.float32)
-    GM = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR).astype(np.float32) / 255.0
+    GM = mask.copy()
     
     gp1 = [G1]
     gp2 = [G2]
@@ -58,27 +61,38 @@ def pyramid_blending(img1, img2, mask, levels=5):
         gpM.append(GM)
     
     # Generate Laplacian pyramids
-    lp1 = [gp1[levels-1]]
-    lp2 = [gp2[levels-1]]
-    for i in range(levels-1, 0, -1):
-        size = (gp1[i-1].shape[1], gp1[i-1].shape[0])
-        L1 = gp1[i-1] - cv2.resize(cv2.pyrUp(gp1[i]), size)
-        L2 = gp2[i-1] - cv2.resize(cv2.pyrUp(gp2[i]), size)
+    lp1 = [gp1[-1]]
+    lp2 = [gp2[-1]]
+    for i in range(levels, 0, -1):
+        # Calculate size explicitly to avoid mismatches
+        expanded = cv2.pyrUp(gp1[i])
+        h, w = gp1[i-1].shape[:2]
+        expanded = cv2.resize(expanded, (w, h))
+        L1 = gp1[i-1] - expanded
+        
+        expanded = cv2.pyrUp(gp2[i])
+        expanded = cv2.resize(expanded, (w, h))
+        L2 = gp2[i-1] - expanded
+        
         lp1.append(L1)
         lp2.append(L2)
     
     # Blend pyramids
     LS = []
     for l1, l2, gm in zip(lp1, lp2, reversed(gpM)):
-        ls = l1 * (1 - gm) + l2 * gm
+        # Resize mask to match current pyramid level
+        h, w = l1.shape[:2]
+        gm_resized = cv2.resize(gm, (w, h))
+        ls = l1 * (1 - gm_resized) + l2 * gm_resized
         LS.append(ls)
     
     # Reconstruct
     ls_ = LS[0]
-    for i in range(1, levels+1):
-        size = (LS[i].shape[1], LS[i].shape[0])
-        ls_ = cv2.resize(cv2.pyrUp(ls_), size)
-        ls_ = cv2.add(ls_, LS[i])
+    for i in range(1, len(LS)):
+        h, w = LS[i].shape[:2]
+        ls_ = cv2.pyrUp(ls_)
+        ls_ = cv2.resize(ls_, (w, h))
+        ls_ = ls_ + LS[i]
     
     return np.clip(ls_, 0, 255).astype(np.uint8)
 
@@ -100,10 +114,11 @@ def load_images(path1, path2):
     img2 = cv2.imread(str(img2_path))
     
     if img1 is None or img2 is None:
-        raise ValueError("Failed to load images - check if they're valid JPEG files")
+        raise ValueError("Failed to load images - check if they're valid image files")
     
     if img1.shape != img2.shape:
-        raise ValueError(f"Size mismatch: {img1.shape} vs {img2.shape}")
+        print(f"Warning: Size mismatch ({img1.shape} vs {img2.shape}), resizing...")
+        img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
     
     return img1, img2
 
@@ -137,11 +152,11 @@ def main():
     except Exception as e:
         print(f"\nERROR: {str(e)}")
         print("\nTroubleshooting:")
-        print("1. Verify both sat1.jpg and sat2.jpg exist")
-        print("2. Check images open in other software")
-        print(f"3. Input contents: {os.listdir('images/input') if os.path.exists('images/input') else 'Missing input folder'}")
+        print("1. Verify both sat1.jpg and sat2.jpg exist in images/input/")
+        print("2. Check images are valid (try opening them in another viewer)")
+        print(f"3. Input folder contents: {os.listdir('images/input') if os.path.exists('images/input') else 'Missing input folder'}")
         print("4. Run verification:")
-        print(f"   python -c \"import cv2; print('sat1 readable:', cv2.imread('images/input/sat1.jpg') is not None)\"")
+        print(f"   python -c \"import cv2; print('sat1 readable:', cv2.imread('images/input/sat1.jpg') is not None)")
 
 if __name__ == "__main__":
     main()
