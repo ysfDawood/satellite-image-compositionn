@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import os  # Added for path handling
+import os
 from utils.blending import pyramid_blending
 from utils.color_adjustment import match_colors
 from utils.helpers import load_images, show_image
@@ -47,7 +47,7 @@ def main():
     print(f"Loaded images with shapes: {img1.shape} and {img2.shape}")
 
     # 3. Create blend mask
-   mask = create_blend_mask(img1.shape) 
+    mask = create_blend_mask(img1.shape)  # Fixed indentation here
 
     # 4. Color correction
     print("Applying color correction...")
