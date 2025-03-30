@@ -1,9 +1,10 @@
 import cv2
 import numpy as np
 import os
+from pathlib import Path
 from utils.blending import pyramid_blending
 from utils.color_adjustment import match_colors
-from utils.helpers import load_images, show_image
+from utils.helpers import show_image
 
 def create_blend_mask(img_shape, blend_width=100):
     """Create a gradual blend mask with proper shape handling"""
@@ -24,30 +25,46 @@ def create_blend_mask(img_shape, blend_width=100):
             
     return mask
 
-def ensure_output_folder_exists():
-    """Creates output folder if it doesn't exist"""
+def ensure_folders_exist():
+    """Creates required folders if they don't exist"""
+    os.makedirs('images/input', exist_ok=True)
     os.makedirs('images/output', exist_ok=True)
 
-def main():
-    # 1. Ensure output folder exists
-    ensure_output_folder_exists()
+def load_images(path1, path2):
+    """Improved image loader with path validation"""
+    img1_path = Path(path1).absolute()
+    img2_path = Path(path2).absolute()
+    
+    print(f"Attempting to load:\n- {img1_path}\n- {img2_path}")
+    
+    if not img1_path.exists():
+        raise FileNotFoundError(f"Image not found: {img1_path}")
+    if not img2_path.exists():
+        raise FileNotFoundError(f"Image not found: {img2_path}")
+    
+    img1 = cv2.imread(str(img1_path))
+    img2 = cv2.imread(str(img2_path))
+    
+    if img1 is None or img2 is None:
+        raise ValueError("Files exist but couldn't be read (may be corrupt or wrong format)")
+    
+    return img1, img2
 
-    # 2. Load satellite images
+def main():
+    # 1. Ensure folder structure exists
+    ensure_folders_exist()
+    
+    # 2. Load images with detailed error handling
     try:
         img1, img2 = load_images('images/input/sat1.jpg', 'images/input/sat2.jpg')
+        print(f"Successfully loaded images with shapes: {img1.shape} and {img2.shape}")
     except Exception as e:
-        print(f"Error loading images: {e}")
+        print(f"ERROR: {e}")
+        print("Contents of images/input:", os.listdir('images/input'))
         return
-
-    # Verify images loaded correctly
-    if img1 is None or img2 is None:
-        print("Error: Could not load one or both images")
-        return
-
-    print(f"Loaded images with shapes: {img1.shape} and {img2.shape}")
 
     # 3. Create blend mask
-    mask = create_blend_mask(img1.shape)  # Fixed indentation here
+    mask = create_blend_mask(img1.shape)
 
     # 4. Color correction
     print("Applying color correction...")
@@ -57,15 +74,15 @@ def main():
     print("Performing pyramid blending...")
     result = pyramid_blending(img1, img2_corrected, mask, levels=5)
 
-    # 6. Save and show results
+    # 6. Save results
     output_path = 'images/output/composite.jpg'
     cv2.imwrite(output_path, result)
-    print(f"Composite image saved to: {output_path}")
+    print(f"Composite image saved to: {Path(output_path).absolute()}")
 
-    # Display results
+    # 7. Display results
     show_image(result, "Final Composition")
 
-    # Show intermediate steps
+    # Optional debug views
     if input("Show intermediate steps? (y/n): ").lower() == 'y':
         show_image(img1, "Original Image 1")
         show_image(img2, "Original Image 2")
