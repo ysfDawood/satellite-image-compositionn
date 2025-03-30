@@ -47,7 +47,7 @@ def main():
     print(f"Loaded images with shapes: {img1.shape} and {img2.shape}")
 
     # 3. Create blend mask
-   mask = create_blend_mask(img1.shape)  # Pass just the shape tuple
+   mask = create_blend_mask(img1.shape) 
 
     # 4. Color correction
     print("Applying color correction...")
